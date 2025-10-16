@@ -199,6 +199,9 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 		}
 	}
 
+	// Buscar informações adicionais do filme no TMDB
+	tmdbMovie, _ := b.tmdb.GetMovieByID(movie.TMDBID)
+	
 	embed := &discordgo.MessageEmbed{
 		Title:       fmt.Sprintf("🎉 Selected Movie: %s (%s)", movie.MovieName, movie.ReleaseYear),
 		Description: fmt.Sprintf("This movie has been randomly selected for %s!", serverName),
@@ -215,6 +218,13 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 			Text:    fmt.Sprintf("Selected by %s", i.Member.User.Username),
 			IconURL: i.Member.User.AvatarURL(""),
 		},
+	}
+
+	if tmdbMovie != nil {
+		posterURL := b.tmdb.GetPosterURL(tmdbMovie.PosterPath)
+		if posterURL != "" {
+			embed.Image = &discordgo.MessageEmbedImage{URL: posterURL}
+		}
 	}
 
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
