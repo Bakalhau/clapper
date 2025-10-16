@@ -21,6 +21,11 @@ type SearchResponse struct {
 	Results []Movie `json:"results"`
 }
 
+type Genre struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
 type Movie struct {
 	ID          int     `json:"id"`
 	Title       string  `json:"title"`
@@ -29,6 +34,7 @@ type Movie struct {
 	ReleaseDate string  `json:"release_date"`
 	PosterPath  string  `json:"poster_path"`
 	GenreIDs    []int   `json:"genre_ids"`
+	Genres      []Genre `json:"genres"`
 }
 
 var genreMap = map[int]string{
@@ -115,6 +121,13 @@ func (c *Client) GetMovieByID(movieID int) (*Movie, error) {
 	var movie Movie
 	if err := json.NewDecoder(resp.Body).Decode(&movie); err != nil {
 		return nil, err
+	}
+
+	if len(movie.Genres) > 0 && len(movie.GenreIDs) == 0 {
+		movie.GenreIDs = make([]int, len(movie.Genres))
+		for i, genre := range movie.Genres {
+			movie.GenreIDs[i] = genre.ID
+		}
 	}
 
 	return &movie, nil
