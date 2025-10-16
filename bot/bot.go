@@ -6,6 +6,7 @@ import (
 	"clapper/tmdb"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -112,20 +113,26 @@ func (b *Bot) registerCommands() error {
 }
 
 func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	if i.Type != discordgo.InteractionApplicationCommand {
-		return
-	}
-
-	switch i.ApplicationCommandData().Name {
-	case "suggestion":
-		b.handleSuggestion(s, i)
-	case "mystats":
-		b.handleMyStats(s, i)
-	case "pickmovie":
-		b.handlePickMovie(s, i)
-	case "moviestats":
-		b.handleMovieStats(s, i)
-	case "removesuggestion":
-		b.handleRemoveSuggestion(s, i)
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		switch i.ApplicationCommandData().Name {
+		case "suggestion":
+			b.handleSuggestion(s, i)
+		case "mystats":
+			b.handleMyStats(s, i)
+		case "pickmovie":
+			b.handlePickMovie(s, i)
+		case "moviestats":
+			b.handleMovieStats(s, i)
+		case "removesuggestion":
+			b.handleRemoveSuggestion(s, i)
+		}
+	case discordgo.InteractionMessageComponent:
+		customID := i.MessageComponentData().CustomID
+		if strings.HasPrefix(customID, "reroll_movie_") {
+			b.handleRerollMovie(s, i)
+		} else if strings.HasPrefix(customID, "confirm_movie_") {
+			b.handleConfirmMovie(s, i)
+		}
 	}
 }

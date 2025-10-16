@@ -131,6 +131,22 @@ func (d *Database) GetRandomMovie() (*MovieResult, error) {
 	return &m, nil
 }
 
+func (d *Database) GetMovieByID(suggestionID int) (*MovieResult, error) {
+	var m MovieResult
+	err := d.db.QueryRow(`
+		SELECT id, movie_name, username, rating, genres, release_year, tmdb_id
+		FROM suggestions
+		WHERE id = ?`, suggestionID).Scan(&m.ID, &m.MovieName, &m.Username, &m.Rating, &m.Genres, &m.ReleaseYear, &m.TMDBID)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
 func (d *Database) MarkMovieSelected(suggestionID int) error {
 	_, err := d.db.Exec(`
 		INSERT INTO selected_movies (suggestion_id, selected_at)

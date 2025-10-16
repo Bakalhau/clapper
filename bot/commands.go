@@ -23,14 +23,12 @@ func (b *Bot) handleSuggestion(s *discordgo.Session, i *discordgo.InteractionCre
 	options := i.ApplicationCommandData().Options
 	input := options[0].StringValue()
 
-	// Verificar se é um link do TMDB
 	tmdbID := extractTMDBID(input)
 	
 	var movie *tmdb.Movie
 	var err error
 	
 	if tmdbID > 0 {
-		// Buscar filme por ID
 		movie, err = b.tmdb.GetMovieByID(tmdbID)
 		if err != nil || movie == nil {
 			msg := fmt.Sprintf("❌ Could not find a movie with TMDB ID %d. Please check the link and try again.", tmdbID)
@@ -40,7 +38,6 @@ func (b *Bot) handleSuggestion(s *discordgo.Session, i *discordgo.InteractionCre
 			return
 		}
 	} else {
-		// Buscar filme por nome
 		movie, err = b.tmdb.SearchMovie(input)
 		if err != nil || movie == nil {
 			msg := fmt.Sprintf("❌ Could not find a movie named \"%s\". Please check the spelling and try again.", input)
@@ -127,12 +124,7 @@ func (b *Bot) handleSuggestion(s *discordgo.Session, i *discordgo.InteractionCre
 	})
 }
 
-// extractTMDBID extrai o ID do filme de um link do TMDB
 func extractTMDBID(input string) int {
-	// Regex para capturar o ID do filme em URLs do TMDB
-	// Exemplos: https://www.themoviedb.org/movie/74-war-of-the-worlds
-	//           https://www.themoviedb.org/movie/74
-	//           themoviedb.org/movie/74-war-of-the-worlds?language=pt
 	re := regexp.MustCompile(`themoviedb\.org/movie/(\d+)`)
 	matches := re.FindStringSubmatch(input)
 	
@@ -180,17 +172,6 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 		return
 	}
 
-	if err := b.db.MarkMovieSelected(movie.ID); err != nil {
-		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: ptrString("❌ An error occurred while selecting the movie. Please try again."),
-		})
-		return
-	}
-
-	totalSuggestions, _ := b.db.GetAllSuggestionsCount()
-	selectedCount, _ := b.db.GetSelectedMoviesCount()
-	remaining := totalSuggestions - selectedCount
-
 	serverName := "Server"
 	if i.GuildID != "" {
 		guild, err := s.Guild(i.GuildID)
@@ -199,13 +180,16 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 		}
 	}
 
-	// Buscar informações adicionais do filme no TMDB
 	tmdbMovie, _ := b.tmdb.GetMovieByID(movie.TMDBID)
 	
+	totalSuggestions, _ := b.db.GetAllSuggestionsCount()
+	selectedCount, _ := b.db.GetSelectedMoviesCount()
+	remaining := totalSuggestions - selectedCount
+
 	embed := &discordgo.MessageEmbed{
-		Title:       fmt.Sprintf("🎉 Selected Movie: %s (%s)", movie.MovieName, movie.ReleaseYear),
-		Description: fmt.Sprintf("This movie has been randomly selected for %s!", serverName),
-		Color:       0x00FF00,
+		Title:       fmt.Sprintf("🎬 Movie Suggestion: %s (%s)", movie.MovieName, movie.ReleaseYear),
+		Description: fmt.Sprintf("This movie has been randomly selected for %s!\n\nAdmins can reroll or confirm the selection.", serverName),
+		Color:       0xFFD700,
 		Timestamp:   time.Now().Format(time.RFC3339),
 		Fields: []*discordgo.MessageEmbedField{
 			{Name: "⭐ Rating", Value: fmt.Sprintf("%.1f/10", movie.Rating), Inline: true},
@@ -215,7 +199,7 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 			{Name: "📈 Progress", Value: fmt.Sprintf("%d/%d movies selected (%d remaining)", selectedCount, totalSuggestions, remaining), Inline: false},
 		},
 		Footer: &discordgo.MessageEmbedFooter{
-			Text:    fmt.Sprintf("Selected by %s", i.Member.User.Username),
+			Text:    fmt.Sprintf("Picked by %s", i.Member.User.Username),
 			IconURL: i.Member.User.AvatarURL(""),
 		},
 	}
@@ -227,8 +211,32 @@ func (b *Bot) handlePickMovie(s *discordgo.Session, i *discordgo.InteractionCrea
 		}
 	}
 
+	components := []discordgo.MessageComponent{
+		discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.Button{
+					Label:    "Reroll",
+					Style:    discordgo.SecondaryButton,
+					CustomID: fmt.Sprintf("reroll_movie_%d", movie.ID),
+					Emoji: &discordgo.ComponentEmoji{
+						Name: "🔄",
+					},
+				},
+				discordgo.Button{
+					Label:    "Confirm Selection",
+					Style:    discordgo.SuccessButton,
+					CustomID: fmt.Sprintf("confirm_movie_%d", movie.ID),
+					Emoji: &discordgo.ComponentEmoji{
+						Name: "✅",
+					},
+				},
+			},
+		},
+	}
+
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Embeds: &[]*discordgo.MessageEmbed{embed},
+		Embeds:     &[]*discordgo.MessageEmbed{embed},
+		Components: &components,
 	})
 }
 
@@ -328,4 +336,203 @@ func (b *Bot) handleRemoveSuggestion(s *discordgo.Session, i *discordgo.Interact
 
 func ptrString(s string) *string {
 	return &s
+}
+
+func (b *Bot) handleRerollMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	isAdmin := false
+	if i.Member != nil {
+		perms, err := s.UserChannelPermissions(i.Member.User.ID, i.ChannelID)
+		if err == nil {
+			isAdmin = perms&discordgo.PermissionAdministrator != 0
+		}
+	}
+
+	if !isAdmin {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Only administrators can reroll movies!",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	})
+
+	movie, err := b.db.GetRandomMovie()
+	if err != nil || movie == nil {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content:    ptrString("❌ No more available movies to pick!"),
+			Embeds:     &[]*discordgo.MessageEmbed{},
+			Components: &[]discordgo.MessageComponent{},
+		})
+		return
+	}
+
+	serverName := "Server"
+	if i.GuildID != "" {
+		guild, err := s.Guild(i.GuildID)
+		if err == nil {
+			serverName = guild.Name
+		}
+	}
+
+	tmdbMovie, _ := b.tmdb.GetMovieByID(movie.TMDBID)
+	
+	totalSuggestions, _ := b.db.GetAllSuggestionsCount()
+	selectedCount, _ := b.db.GetSelectedMoviesCount()
+	remaining := totalSuggestions - selectedCount
+
+	embed := &discordgo.MessageEmbed{
+		Title:       fmt.Sprintf("🎬 Movie Suggestion: %s (%s)", movie.MovieName, movie.ReleaseYear),
+		Description: fmt.Sprintf("This movie has been randomly selected for %s!\n\nAdmins can reroll or confirm the selection.", serverName),
+		Color:       0xFFD700,
+		Timestamp:   time.Now().Format(time.RFC3339),
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "⭐ Rating", Value: fmt.Sprintf("%.1f/10", movie.Rating), Inline: true},
+			{Name: "🎭 Genres", Value: movie.Genres, Inline: true},
+			{Name: "📅 Year", Value: movie.ReleaseYear, Inline: true},
+			{Name: "👤 Suggested by", Value: movie.Username, Inline: false},
+			{Name: "📈 Progress", Value: fmt.Sprintf("%d/%d movies selected (%d remaining)", selectedCount, totalSuggestions, remaining), Inline: false},
+		},
+		Footer: &discordgo.MessageEmbedFooter{
+			Text:    fmt.Sprintf("Rerolled by %s", i.Member.User.Username),
+			IconURL: i.Member.User.AvatarURL(""),
+		},
+	}
+
+	if tmdbMovie != nil {
+		posterURL := b.tmdb.GetPosterURL(tmdbMovie.PosterPath)
+		if posterURL != "" {
+			embed.Image = &discordgo.MessageEmbedImage{URL: posterURL}
+		}
+	}
+
+	components := []discordgo.MessageComponent{
+		discordgo.ActionsRow{
+			Components: []discordgo.MessageComponent{
+				discordgo.Button{
+					Label:    "Reroll",
+					Style:    discordgo.SecondaryButton,
+					CustomID: fmt.Sprintf("reroll_movie_%d", movie.ID),
+					Emoji: &discordgo.ComponentEmoji{
+						Name: "🔄",
+					},
+				},
+				discordgo.Button{
+					Label:    "Confirm Selection",
+					Style:    discordgo.SuccessButton,
+					CustomID: fmt.Sprintf("confirm_movie_%d", movie.ID),
+					Emoji: &discordgo.ComponentEmoji{
+						Name: "✅",
+					},
+				},
+			},
+		},
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds:     &[]*discordgo.MessageEmbed{embed},
+		Components: &components,
+	})
+}
+
+func (b *Bot) handleConfirmMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	isAdmin := false
+	if i.Member != nil {
+		perms, err := s.UserChannelPermissions(i.Member.User.ID, i.ChannelID)
+		if err == nil {
+			isAdmin = perms&discordgo.PermissionAdministrator != 0
+		}
+	}
+
+	if !isAdmin {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ Only administrators can confirm movie selections!",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredMessageUpdate,
+	})
+
+	customID := i.MessageComponentData().CustomID
+	re := regexp.MustCompile(`confirm_movie_(\d+)`)
+	matches := re.FindStringSubmatch(customID)
+	
+	if len(matches) < 2 {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ An error occurred. Please try again."),
+		})
+		return
+	}
+
+	movieID, _ := strconv.Atoi(matches[1])
+
+	if err := b.db.MarkMovieSelected(movieID); err != nil {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ An error occurred while confirming the movie. Please try again."),
+		})
+		return
+	}
+
+	movie, err := b.db.GetMovieByID(movieID)
+	if err != nil || movie == nil {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ Could not find movie information."),
+		})
+		return
+	}
+
+	serverName := "Server"
+	if i.GuildID != "" {
+		guild, err := s.Guild(i.GuildID)
+		if err == nil {
+			serverName = guild.Name
+		}
+	}
+
+	totalSuggestions, _ := b.db.GetAllSuggestionsCount()
+	selectedCount, _ := b.db.GetSelectedMoviesCount()
+	remaining := totalSuggestions - selectedCount
+
+	tmdbMovie, _ := b.tmdb.GetMovieByID(movie.TMDBID)
+
+	embed := &discordgo.MessageEmbed{
+		Title:       fmt.Sprintf("🎉 Selected Movie: %s (%s)", movie.MovieName, movie.ReleaseYear),
+		Description: fmt.Sprintf("This movie has been confirmed for %s!", serverName),
+		Color:       0x00FF00,
+		Timestamp:   time.Now().Format(time.RFC3339),
+		Fields: []*discordgo.MessageEmbedField{
+			{Name: "⭐ Rating", Value: fmt.Sprintf("%.1f/10", movie.Rating), Inline: true},
+			{Name: "🎭 Genres", Value: movie.Genres, Inline: true},
+			{Name: "📅 Year", Value: movie.ReleaseYear, Inline: true},
+			{Name: "👤 Suggested by", Value: movie.Username, Inline: false},
+			{Name: "📈 Progress", Value: fmt.Sprintf("%d/%d movies selected (%d remaining)", selectedCount, totalSuggestions, remaining), Inline: false},
+		},
+		Footer: &discordgo.MessageEmbedFooter{
+			Text:    fmt.Sprintf("Confirmed by %s", i.Member.User.Username),
+			IconURL: i.Member.User.AvatarURL(""),
+		},
+	}
+
+	if tmdbMovie != nil {
+		posterURL := b.tmdb.GetPosterURL(tmdbMovie.PosterPath)
+		if posterURL != "" {
+			embed.Image = &discordgo.MessageEmbedImage{URL: posterURL}
+		}
+	}
+
+	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Embeds:     &[]*discordgo.MessageEmbed{embed},
+		Components: &[]discordgo.MessageComponent{},
+	})
 }
