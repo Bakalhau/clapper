@@ -21,6 +21,7 @@ type Suggestion struct {
 	Rating       float64
 	Genres       string
 	ReleaseYear  string
+	IsSelected   bool
 }
 
 type MovieResult struct {
@@ -110,6 +111,35 @@ func (d *Database) GetUserStats(userID string) (count int, avgRating float64, er
 		FROM suggestions
 		WHERE user_id = ?`, userID).Scan(&count, &avgRating)
 	return
+}
+
+func (d *Database) GetUserSuggestions(userID string) ([]Suggestion, error) {
+	rows, err := d.db.Query(`
+		SELECT s.id, s.movie_name, s.user_id, s.username, s.suggested_at, 
+		       s.tmdb_id, s.rating, s.genres, s.release_year,
+		       CASE WHEN sm.id IS NOT NULL THEN 1 ELSE 0 END as is_selected
+		FROM suggestions s
+		LEFT JOIN selected_movies sm ON s.id = sm.suggestion_id
+		WHERE s.user_id = ?
+		ORDER BY s.suggested_at DESC`, userID)
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var suggestions []Suggestion
+	for rows.Next() {
+		var s Suggestion
+		err := rows.Scan(&s.ID, &s.MovieName, &s.UserID, &s.Username, &s.SuggestedAt,
+			&s.TMDBID, &s.Rating, &s.Genres, &s.ReleaseYear, &s.IsSelected)
+		if err != nil {
+			return nil, err
+		}
+		suggestions = append(suggestions, s)
+	}
+
+	return suggestions, nil
 }
 
 func (d *Database) GetRandomMovie() (*MovieResult, error) {

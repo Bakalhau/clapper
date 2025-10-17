@@ -78,6 +78,10 @@ func (b *Bot) registerCommands() error {
 			Description: "View your movie suggestion statistics",
 		},
 		{
+			Name:        "mysuggestions",
+			Description: "View all your movie suggestions",
+		},
+		{
 			Name:        "pickmovie",
 			Description: "Pick a random movie from the suggestions",
 		},
@@ -120,6 +124,8 @@ func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCr
 			b.handleSuggestion(s, i)
 		case "mystats":
 			b.handleMyStats(s, i)
+		case "mysuggestions":
+			b.handleMySuggestions(s, i)
 		case "pickmovie":
 			b.handlePickMovie(s, i)
 		case "moviestats":
@@ -133,6 +139,10 @@ func (b *Bot) handleInteraction(s *discordgo.Session, i *discordgo.InteractionCr
 			b.handleRerollMovie(s, i)
 		} else if strings.HasPrefix(customID, "confirm_movie_") {
 			b.handleConfirmMovie(s, i)
+		} else if strings.HasPrefix(customID, "mysuggestions_prev_") {
+			b.handleMySuggestionsPrev(s, i)
+		} else if strings.HasPrefix(customID, "mysuggestions_next_") {
+			b.handleMySuggestionsNext(s, i)
 		}
 	}
 }
