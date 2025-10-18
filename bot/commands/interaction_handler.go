@@ -22,6 +22,12 @@ func (h *Handlers) HandleInteraction(s *discordgo.Session, i *discordgo.Interact
 			h.HandleMovieStats(s, i)
 		case "removesuggestion":
 			h.HandleRemoveSuggestion(s, i)
+		case "ratemovie":
+			h.HandleRateMovie(s, i)
+		case "moviereviews":
+			h.HandleMovieReviews(s, i)
+		case "selectedmovies":
+			h.HandleSelectedMovies(s, i)
 		}
 	case discordgo.InteractionMessageComponent:
 		customID := i.MessageComponentData().CustomID

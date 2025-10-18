@@ -43,4 +43,50 @@ var Commands = []*discordgo.ApplicationCommand{
 			},
 		},
 	},
+	{
+		Name:        "ratemovie",
+		Description: "Rate a selected movie with a score and optional review",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "movie_name",
+				Description: "The name of the movie to rate",
+				Required:    true,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionNumber,
+				Name:        "rating",
+				Description: "Your rating from 0 to 10 (e.g., 8.4)",
+				Required:    true,
+				MinValue:    ptrFloat64(0),
+				MaxValue:    10.0,
+			},
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "review",
+				Description: "Your review of the movie (optional)",
+				Required:    false,
+			},
+		},
+	},
+	{
+		Name:        "moviereviews",
+		Description: "View all reviews for a selected movie",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionString,
+				Name:        "movie_name",
+				Description: "The name of the movie",
+				Required:    true,
+			},
+		},
+	},
+	{
+		Name:        "selectedmovies",
+		Description: "View all movies that have been selected",
+	},
+}
+
+func ptrFloat64(f float64) *float64 {
+	return &f
 }

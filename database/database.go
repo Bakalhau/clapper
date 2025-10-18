@@ -35,6 +35,23 @@ type MovieResult struct {
 	TMDBID      int
 }
 
+type MovieReview struct {
+	ID           int
+	SuggestionID int
+	UserID       string
+	Username     string
+	Rating       float64
+	ReviewText   string
+	ReviewedAt   time.Time
+}
+
+type SelectedMovieWithReviews struct {
+	MovieResult
+	Reviews      []MovieReview
+	AverageScore float64
+	ReviewCount  int
+}
+
 func New(dbPath string) (*Database, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -50,20 +67,16 @@ func New(dbPath string) (*Database, error) {
 }
 
 func (d *Database) initDatabase() error {
-	// Primeiro, vamos verificar se a tabela selected_movies existe e tem a estrutura correta
 	var tableName string
 	err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='selected_movies'").Scan(&tableName)
 	
 	if err == sql.ErrNoRows {
-		// Tabela não existe, criar do zero
 		log.Println("Criando tabela selected_movies...")
 	} else if err == nil {
-		// Tabela existe, vamos verificar se tem a coluna suggestion_id
 		var hasColumn bool
 		err = d.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('selected_movies') WHERE name='suggestion_id'").Scan(&hasColumn)
 		if err != nil || !hasColumn {
 			log.Println("Recriando tabela selected_movies com estrutura correta...")
-			// Dropar e recriar
 			_, err = d.db.Exec("DROP TABLE IF EXISTS selected_movies")
 			if err != nil {
 				return err
@@ -89,9 +102,22 @@ func (d *Database) initDatabase() error {
 			selected_at TIMESTAMP NOT NULL,
 			FOREIGN KEY (suggestion_id) REFERENCES suggestions (id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS movie_reviews (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			suggestion_id INTEGER NOT NULL,
+			user_id TEXT NOT NULL,
+			username TEXT NOT NULL,
+			rating REAL NOT NULL CHECK(rating >= 0 AND rating <= 10),
+			review_text TEXT,
+			reviewed_at TIMESTAMP NOT NULL,
+			FOREIGN KEY (suggestion_id) REFERENCES suggestions (id) ON DELETE CASCADE,
+			UNIQUE(suggestion_id, user_id)
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_suggestions_user_id ON suggestions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_suggestions_tmdb_id ON suggestions(tmdb_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_selected_movies_suggestion_id ON selected_movies(suggestion_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_movie_reviews_suggestion_id ON movie_reviews(suggestion_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_movie_reviews_user_id ON movie_reviews(user_id)`,
 	}
 
 	for _, query := range queries {
@@ -278,6 +304,9 @@ func (d *Database) RemoveSuggestion(suggestionID int) error {
 	}
 	defer tx.Rollback()
 
+	if _, err := tx.Exec("DELETE FROM movie_reviews WHERE suggestion_id = ?", suggestionID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec("DELETE FROM selected_movies WHERE suggestion_id = ?", suggestionID); err != nil {
 		return err
 	}
@@ -286,6 +315,135 @@ func (d *Database) RemoveSuggestion(suggestionID int) error {
 	}
 
 	return tx.Commit()
+}
+
+
+func (d *Database) IsMovieSelected(suggestionID int) (bool, error) {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM selected_movies WHERE suggestion_id = ?", suggestionID).Scan(&count)
+	return count > 0, err
+}
+
+func (d *Database) SaveMovieReview(review *MovieReview) error {
+	_, err := d.db.Exec(`
+		INSERT INTO movie_reviews (suggestion_id, user_id, username, rating, review_text, reviewed_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(suggestion_id, user_id) 
+		DO UPDATE SET rating = excluded.rating, review_text = excluded.review_text, reviewed_at = excluded.reviewed_at`,
+		review.SuggestionID, review.UserID, review.Username, review.Rating, review.ReviewText, time.Now())
+	return err
+}
+
+func (d *Database) GetMovieReviews(suggestionID int) ([]MovieReview, error) {
+	rows, err := d.db.Query(`
+		SELECT id, suggestion_id, user_id, username, rating, COALESCE(review_text, ''), reviewed_at
+		FROM movie_reviews
+		WHERE suggestion_id = ?
+		ORDER BY reviewed_at DESC`, suggestionID)
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var reviews []MovieReview
+	for rows.Next() {
+		var r MovieReview
+		err := rows.Scan(&r.ID, &r.SuggestionID, &r.UserID, &r.Username, &r.Rating, &r.ReviewText, &r.ReviewedAt)
+		if err != nil {
+			return nil, err
+		}
+		reviews = append(reviews, r)
+	}
+
+	return reviews, nil
+}
+
+func (d *Database) GetUserReview(suggestionID int, userID string) (*MovieReview, error) {
+	var r MovieReview
+	err := d.db.QueryRow(`
+		SELECT id, suggestion_id, user_id, username, rating, COALESCE(review_text, ''), reviewed_at
+		FROM movie_reviews
+		WHERE suggestion_id = ? AND user_id = ?`, suggestionID, userID).Scan(
+		&r.ID, &r.SuggestionID, &r.UserID, &r.Username, &r.Rating, &r.ReviewText, &r.ReviewedAt)
+	
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+func (d *Database) GetAverageMovieRating(suggestionID int) (float64, int, error) {
+	var avg sql.NullFloat64
+	var count int
+	err := d.db.QueryRow(`
+		SELECT AVG(rating), COUNT(*)
+		FROM movie_reviews
+		WHERE suggestion_id = ?`, suggestionID).Scan(&avg, &count)
+	
+	if err != nil {
+		return 0, 0, err
+	}
+	
+	if !avg.Valid {
+		return 0, 0, nil
+	}
+	
+	return avg.Float64, count, nil
+}
+
+func (d *Database) GetAllSelectedMovies() ([]SelectedMovieWithReviews, error) {
+	rows, err := d.db.Query(`
+		SELECT s.id, s.movie_name, s.username, s.rating, s.genres, s.release_year, s.tmdb_id
+		FROM suggestions s
+		INNER JOIN selected_movies sm ON s.id = sm.suggestion_id
+		ORDER BY sm.selected_at DESC`)
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var movies []SelectedMovieWithReviews
+	for rows.Next() {
+		var m SelectedMovieWithReviews
+		err := rows.Scan(&m.ID, &m.MovieName, &m.Username, &m.Rating, &m.Genres, &m.ReleaseYear, &m.TMDBID)
+		if err != nil {
+			return nil, err
+		}
+		
+		reviews, _ := d.GetMovieReviews(m.ID)
+		m.Reviews = reviews
+		m.ReviewCount = len(reviews)
+		
+		avgRating, _, _ := d.GetAverageMovieRating(m.ID)
+		m.AverageScore = avgRating
+		
+		movies = append(movies, m)
+	}
+
+	return movies, nil
+}
+
+func (d *Database) SearchSelectedMovie(movieName string) (*MovieResult, error) {
+	var m MovieResult
+	err := d.db.QueryRow(`
+		SELECT s.id, s.movie_name, s.username, s.rating, s.genres, s.release_year, s.tmdb_id
+		FROM suggestions s
+		INNER JOIN selected_movies sm ON s.id = sm.suggestion_id
+		WHERE LOWER(s.movie_name) LIKE LOWER(?)
+		LIMIT 1`, "%"+movieName+"%").Scan(&m.ID, &m.MovieName, &m.Username, &m.Rating, &m.Genres, &m.ReleaseYear, &m.TMDBID)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 func (d *Database) Close() error {
