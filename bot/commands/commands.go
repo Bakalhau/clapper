@@ -54,12 +54,10 @@ var Commands = []*discordgo.ApplicationCommand{
 				Required:    true,
 			},
 			{
-				Type:        discordgo.ApplicationCommandOptionNumber,
+				Type:        discordgo.ApplicationCommandOptionString,
 				Name:        "rating",
 				Description: "Your rating from 0 to 10 (e.g., 8.4)",
 				Required:    true,
-				MinValue:    ptrFloat64(0),
-				MaxValue:    10.0,
 			},
 			{
 				Type:        discordgo.ApplicationCommandOptionString,
@@ -85,8 +83,4 @@ var Commands = []*discordgo.ApplicationCommand{
 		Name:        "selectedmovies",
 		Description: "View all movies that have been selected",
 	},
-}
-
-func ptrFloat64(f float64) *float64 {
-	return &f
 }

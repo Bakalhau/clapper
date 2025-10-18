@@ -3,6 +3,8 @@ package commands
 import (
 	"clapper/database"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -17,13 +19,26 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 
 	options := i.ApplicationCommandData().Options
 	movieName := options[0].StringValue()
-	rating := options[1].FloatValue()
+	ratingStr := options[1].StringValue()
 	
 	var reviewText string
 	if len(options) > 2 {
 		reviewText = options[2].StringValue()
 	}
 
+	// Converter e validar o rating
+	ratingStr = strings.TrimSpace(ratingStr)
+	ratingStr = strings.Replace(ratingStr, ",", ".", -1)
+	rating, err := strconv.ParseFloat(ratingStr, 64)
+	
+	if err != nil {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ Invalid rating! Please provide a valid number (e.g., 8.4 or 9)."),
+		})
+		return
+	}
+
+	// Validação da nota
 	if rating < 0 || rating > 10 {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ Invalid rating! Please provide a rating between 0 and 10."),
@@ -31,6 +46,7 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 		return
 	}
 
+	// Buscar o filme selecionado
 	movie, err := h.db.SearchSelectedMovie(movieName)
 	if err != nil || movie == nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
@@ -39,8 +55,10 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 		return
 	}
 
+	// Verificar se o usuário já avaliou
 	existingReview, _ := h.db.GetUserReview(movie.ID, i.Member.User.ID)
 
+	// Salvar ou atualizar a avaliação
 	review := &database.MovieReview{
 		SuggestionID: movie.ID,
 		UserID:       i.Member.User.ID,
@@ -56,8 +74,10 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 		return
 	}
 
+	// Buscar média e contagem de avaliações
 	avgRating, reviewCount, _ := h.db.GetAverageMovieRating(movie.ID)
 
+	// Criar embed de confirmação
 	action := "added"
 	if existingReview != nil {
 		action = "updated"
@@ -78,6 +98,7 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 		})
 	}
 
+	// Adicionar estatísticas do filme
 	embed.Fields = append(embed.Fields,
 		&discordgo.MessageEmbedField{
 			Name:   "📊 Community Rating",
@@ -91,6 +112,7 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 		},
 	)
 
+	// Buscar poster do TMDB
 	tmdbMovie, _ := h.tmdb.GetMovieByID(movie.TMDBID)
 	if tmdbMovie != nil {
 		posterURL := h.tmdb.GetPosterURL(tmdbMovie.PosterPath)
