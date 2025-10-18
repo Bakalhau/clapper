@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"log"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -49,6 +50,27 @@ func New(dbPath string) (*Database, error) {
 }
 
 func (d *Database) initDatabase() error {
+	// Primeiro, vamos verificar se a tabela selected_movies existe e tem a estrutura correta
+	var tableName string
+	err := d.db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='selected_movies'").Scan(&tableName)
+	
+	if err == sql.ErrNoRows {
+		// Tabela não existe, criar do zero
+		log.Println("Criando tabela selected_movies...")
+	} else if err == nil {
+		// Tabela existe, vamos verificar se tem a coluna suggestion_id
+		var hasColumn bool
+		err = d.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('selected_movies') WHERE name='suggestion_id'").Scan(&hasColumn)
+		if err != nil || !hasColumn {
+			log.Println("Recriando tabela selected_movies com estrutura correta...")
+			// Dropar e recriar
+			_, err = d.db.Exec("DROP TABLE IF EXISTS selected_movies")
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS suggestions (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,16 +87,21 @@ func (d *Database) initDatabase() error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			suggestion_id INTEGER NOT NULL,
 			selected_at TIMESTAMP NOT NULL,
-			FOREIGN KEY (suggestion_id) REFERENCES suggestions (id)
+			FOREIGN KEY (suggestion_id) REFERENCES suggestions (id) ON DELETE CASCADE
 		)`,
+		`CREATE INDEX IF NOT EXISTS idx_suggestions_user_id ON suggestions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_suggestions_tmdb_id ON suggestions(tmdb_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_selected_movies_suggestion_id ON selected_movies(suggestion_id)`,
 	}
 
 	for _, query := range queries {
 		if _, err := d.db.Exec(query); err != nil {
+			log.Printf("Erro ao executar query: %s\nErro: %v", query, err)
 			return err
 		}
 	}
 
+	log.Println("Database initialized successfully")
 	return nil
 }
 
@@ -100,9 +127,15 @@ func (d *Database) SaveSuggestion(s *Suggestion) (int64, error) {
 		s.MovieName, s.UserID, s.Username, time.Now(), s.TMDBID, s.Rating, s.Genres, s.ReleaseYear,
 	)
 	if err != nil {
+		log.Printf("Erro ao salvar sugestão: %v", err)
 		return 0, err
 	}
-	return result.LastInsertId()
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	log.Printf("Sugestão salva com ID: %d", id)
+	return id, nil
 }
 
 func (d *Database) GetUserStats(userID string) (count int, avgRating float64, err error) {
@@ -114,6 +147,8 @@ func (d *Database) GetUserStats(userID string) (count int, avgRating float64, er
 }
 
 func (d *Database) GetUserSuggestions(userID string) ([]Suggestion, error) {
+	log.Printf("Buscando sugestões para user_id: %s", userID)
+	
 	rows, err := d.db.Query(`
 		SELECT s.id, s.movie_name, s.user_id, s.username, s.suggested_at, 
 		       s.tmdb_id, s.rating, s.genres, s.release_year,
@@ -124,6 +159,7 @@ func (d *Database) GetUserSuggestions(userID string) ([]Suggestion, error) {
 		ORDER BY s.suggested_at DESC`, userID)
 	
 	if err != nil {
+		log.Printf("Erro na query GetUserSuggestions: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -131,14 +167,19 @@ func (d *Database) GetUserSuggestions(userID string) ([]Suggestion, error) {
 	var suggestions []Suggestion
 	for rows.Next() {
 		var s Suggestion
+		var isSelectedInt int
 		err := rows.Scan(&s.ID, &s.MovieName, &s.UserID, &s.Username, &s.SuggestedAt,
-			&s.TMDBID, &s.Rating, &s.Genres, &s.ReleaseYear, &s.IsSelected)
+			&s.TMDBID, &s.Rating, &s.Genres, &s.ReleaseYear, &isSelectedInt)
 		if err != nil {
+			log.Printf("Erro ao escanear linha: %v", err)
 			return nil, err
 		}
+		s.IsSelected = isSelectedInt == 1
 		suggestions = append(suggestions, s)
+		log.Printf("Sugestão encontrada: %s (ID: %d)", s.MovieName, s.ID)
 	}
 
+	log.Printf("Total de sugestões encontradas: %d", len(suggestions))
 	return suggestions, nil
 }
 
@@ -199,10 +240,10 @@ func (d *Database) GetSelectedMoviesCount() (int, error) {
 func (d *Database) SearchUserSuggestions(movieName, userID string) (*Suggestion, error) {
 	var s Suggestion
 	err := d.db.QueryRow(`
-		SELECT id, movie_name, tmdb_id, user_id
+		SELECT id, movie_name, tmdb_id, user_id, username
 		FROM suggestions
 		WHERE LOWER(movie_name) LIKE LOWER(?) AND user_id = ?
-		LIMIT 1`, "%"+movieName+"%", userID).Scan(&s.ID, &s.MovieName, &s.TMDBID, &s.UserID)
+		LIMIT 1`, "%"+movieName+"%", userID).Scan(&s.ID, &s.MovieName, &s.TMDBID, &s.UserID, &s.Username)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

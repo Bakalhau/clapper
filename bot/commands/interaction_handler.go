@@ -1,0 +1,38 @@
+package commands
+
+import (
+	"strings"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+func (h *Handlers) HandleInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	switch i.Type {
+	case discordgo.InteractionApplicationCommand:
+		switch i.ApplicationCommandData().Name {
+		case "suggestion":
+			h.HandleSuggestion(s, i)
+		case "mystats":
+			h.HandleMyStats(s, i)
+		case "mysuggestions":
+			h.HandleMySuggestions(s, i)
+		case "pickmovie":
+			h.HandlePickMovie(s, i)
+		case "moviestats":
+			h.HandleMovieStats(s, i)
+		case "removesuggestion":
+			h.HandleRemoveSuggestion(s, i)
+		}
+	case discordgo.InteractionMessageComponent:
+		customID := i.MessageComponentData().CustomID
+		if strings.HasPrefix(customID, "reroll_movie_") {
+			h.HandleRerollMovie(s, i)
+		} else if strings.HasPrefix(customID, "confirm_movie_") {
+			h.HandleConfirmMovie(s, i)
+		} else if strings.HasPrefix(customID, "mysuggestions_prev_") {
+			h.HandleMySuggestionsPrev(s, i)
+		} else if strings.HasPrefix(customID, "mysuggestions_next_") {
+			h.HandleMySuggestionsNext(s, i)
+		}
+	}
+}
