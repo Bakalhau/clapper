@@ -4,6 +4,25 @@ import "github.com/bwmarrin/discordgo"
 
 var Commands = []*discordgo.ApplicationCommand{
 	{
+		Name:        "setup",
+		Description: "Configure the bot for this server (Admin only)",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type:        discordgo.ApplicationCommandOptionChannel,
+				Name:        "suggestion_channel",
+				Description: "The channel where movie suggestions will be posted",
+				Required:    true,
+				ChannelTypes: []discordgo.ChannelType{
+					discordgo.ChannelTypeGuildText,
+				},
+			},
+		},
+	},
+	{
+		Name:        "config",
+		Description: "View the current bot configuration for this server",
+	},
+	{
 		Name:        "suggestion",
 		Description: "Suggest a movie for your server using movie name or TMDB link",
 		Options: []*discordgo.ApplicationCommandOption{

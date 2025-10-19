@@ -1,21 +1,18 @@
 package commands
 
 import (
-	"clapper/config"
 	"clapper/database"
 	"clapper/tmdb"
 )
 
 type Handlers struct {
-	db      *database.Database
-	tmdb    *tmdb.Client
-	config  *config.Config
+	db   *database.Database
+	tmdb *tmdb.Client
 }
 
-func NewHandlers(db *database.Database, tmdb *tmdb.Client, config *config.Config) *Handlers {
+func NewHandlers(db *database.Database, tmdb *tmdb.Client) *Handlers {
 	return &Handlers{
-		db:      db,
-		tmdb:    tmdb,
-		config:  config,
+		db:   db,
+		tmdb: tmdb,
 	}
 }

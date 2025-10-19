@@ -47,7 +47,7 @@ func (b *Bot) Start() error {
 		return fmt.Errorf("error opening Discord connection: %w", err)
 	}
 
-	commandHandlers := commands.NewHandlers(b.db, b.tmdb, b.config)
+	commandHandlers := commands.NewHandlers(b.db, b.tmdb)
 
 	b.session.AddHandler(commandHandlers.HandleInteraction)
 

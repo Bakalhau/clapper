@@ -13,6 +13,18 @@ import (
 )
 
 func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -20,10 +32,18 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 		},
 	})
 
-	guildID := i.GuildID
-	if guildID == "" {
+	// Check if server is configured
+	guildConfig, err := h.db.GetGuildConfig(guildID)
+	if err != nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: ptrString("❌ This command can only be used in a server."),
+			Content: ptrString("❌ An error occurred while checking server configuration. Please try again."),
+		})
+		return
+	}
+
+	if guildConfig == nil {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ This server has not been configured yet!\n\nAn administrator needs to run `/setup` to configure the suggestion channel before movies can be suggested."),
 		})
 		return
 	}
@@ -34,7 +54,6 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 	tmdbID := extractTMDBID(input)
 
 	var movie *tmdb.Movie
-	var err error
 
 	if tmdbID > 0 {
 		movie, err = h.tmdb.GetMovieByID(tmdbID)
@@ -102,10 +121,11 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 		embed.Image = &discordgo.MessageEmbedImage{URL: posterURL}
 	}
 
-	_, err = s.ChannelMessageSendEmbed(h.config.SuggestionChannelID, embed)
+	// Post to configured suggestion channel
+	_, err = s.ChannelMessageSendEmbed(guildConfig.SuggestionChannelID, embed)
 	if err != nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: ptrString("❌ Could not find the suggestion channel. Please contact an administrator."),
+			Content: ptrString("❌ Could not post to the suggestion channel. The channel may have been deleted or the bot may not have permissions. Please contact an administrator to run `/setup` again."),
 		})
 		return
 	}
@@ -129,7 +149,7 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 	}
 
 	s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-		Content: ptrString(fmt.Sprintf("✅ Successfully suggested **%s**! Your suggestion has been posted in the movie channel.", movie.Title)),
+		Content: ptrString(fmt.Sprintf("✅ Successfully suggested **%s**! Your suggestion has been posted in <#%s>.", movie.Title, guildConfig.SuggestionChannelID)),
 	})
 }
 

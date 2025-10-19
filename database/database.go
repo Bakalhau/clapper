@@ -13,17 +13,17 @@ type Database struct {
 }
 
 type Suggestion struct {
-	ID           int
-	GuildID      string
-	MovieName    string
-	UserID       string
-	Username     string
-	SuggestedAt  time.Time
-	TMDBID       int
-	Rating       float64
-	Genres       string
-	ReleaseYear  string
-	IsSelected   bool
+	ID          int
+	GuildID     string
+	MovieName   string
+	UserID      string
+	Username    string
+	SuggestedAt time.Time
+	TMDBID      int
+	Rating      float64
+	Genres      string
+	ReleaseYear string
+	IsSelected  bool
 }
 
 type MovieResult struct {
@@ -55,6 +55,13 @@ type SelectedMovieWithReviews struct {
 	ReviewCount  int
 }
 
+type GuildConfig struct {
+	ID                  int
+	GuildID             string
+	SuggestionChannelID string
+	ConfiguredAt        time.Time
+}
+
 func New(dbPath string) (*Database, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
@@ -73,10 +80,10 @@ func (d *Database) initDatabase() error {
 	// Verificar se precisa migrar
 	var hasGuildID bool
 	err := d.db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('suggestions') WHERE name='guild_id'").Scan(&hasGuildID)
-	
+
 	if err == nil && !hasGuildID {
 		log.Println("Migrando banco de dados para suporte multi-guild...")
-		
+
 		// Backup das tabelas antigas
 		_, _ = d.db.Exec("ALTER TABLE suggestions RENAME TO suggestions_old")
 		_, _ = d.db.Exec("ALTER TABLE selected_movies RENAME TO selected_movies_old")
@@ -135,8 +142,30 @@ func (d *Database) initDatabase() error {
 		}
 	}
 
+	// Inicializar tabela de configurações
+	if err := d.initGuildConfig(); err != nil {
+		return err
+	}
+
 	log.Println("Database initialized successfully with multi-guild support")
 	return nil
+}
+
+func (d *Database) initGuildConfig() error {
+	query := `CREATE TABLE IF NOT EXISTS guild_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		guild_id TEXT NOT NULL UNIQUE,
+		suggestion_channel_id TEXT NOT NULL,
+		configured_at TIMESTAMP NOT NULL
+	)`
+
+	_, err := d.db.Exec(query)
+	if err != nil {
+		return err
+	}
+
+	_, err = d.db.Exec(`CREATE INDEX IF NOT EXISTS idx_guild_configs_guild_id ON guild_configs(guild_id)`)
+	return err
 }
 
 func (d *Database) MovieAlreadySuggested(guildID string, tmdbID int) (bool, error) {
@@ -182,7 +211,7 @@ func (d *Database) GetUserStats(guildID, userID string) (count int, avgRating fl
 
 func (d *Database) GetUserSuggestions(guildID, userID string) ([]Suggestion, error) {
 	log.Printf("Buscando sugestões para guild_id: %s, user_id: %s", guildID, userID)
-	
+
 	rows, err := d.db.Query(`
 		SELECT s.id, s.guild_id, s.movie_name, s.user_id, s.username, s.suggested_at, 
 		       s.tmdb_id, s.rating, s.genres, s.release_year,
@@ -191,7 +220,7 @@ func (d *Database) GetUserSuggestions(guildID, userID string) ([]Suggestion, err
 		LEFT JOIN selected_movies sm ON s.id = sm.suggestion_id AND s.guild_id = sm.guild_id
 		WHERE s.guild_id = ? AND s.user_id = ?
 		ORDER BY s.suggested_at DESC`, guildID, userID)
-	
+
 	if err != nil {
 		log.Printf("Erro na query GetUserSuggestions: %v", err)
 		return nil, err
@@ -346,7 +375,7 @@ func (d *Database) GetMovieReviews(guildID string, suggestionID int) ([]MovieRev
 		FROM movie_reviews
 		WHERE guild_id = ? AND suggestion_id = ?
 		ORDER BY reviewed_at DESC`, guildID, suggestionID)
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +401,7 @@ func (d *Database) GetUserReview(guildID string, suggestionID int, userID string
 		FROM movie_reviews
 		WHERE guild_id = ? AND suggestion_id = ? AND user_id = ?`, guildID, suggestionID, userID).Scan(
 		&r.ID, &r.SuggestionID, &r.GuildID, &r.UserID, &r.Username, &r.Rating, &r.ReviewText, &r.ReviewedAt)
-	
+
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -389,15 +418,15 @@ func (d *Database) GetAverageMovieRating(guildID string, suggestionID int) (floa
 		SELECT AVG(rating), COUNT(*)
 		FROM movie_reviews
 		WHERE guild_id = ? AND suggestion_id = ?`, guildID, suggestionID).Scan(&avg, &count)
-	
+
 	if err != nil {
 		return 0, 0, err
 	}
-	
+
 	if !avg.Valid {
 		return 0, 0, nil
 	}
-	
+
 	return avg.Float64, count, nil
 }
 
@@ -408,7 +437,7 @@ func (d *Database) GetAllSelectedMovies(guildID string) ([]SelectedMovieWithRevi
 		INNER JOIN selected_movies sm ON s.id = sm.suggestion_id AND s.guild_id = sm.guild_id
 		WHERE s.guild_id = ?
 		ORDER BY sm.selected_at DESC`, guildID)
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -421,14 +450,14 @@ func (d *Database) GetAllSelectedMovies(guildID string) ([]SelectedMovieWithRevi
 		if err != nil {
 			return nil, err
 		}
-		
+
 		reviews, _ := d.GetMovieReviews(guildID, m.ID)
 		m.Reviews = reviews
 		m.ReviewCount = len(reviews)
-		
+
 		avgRating, _, _ := d.GetAverageMovieRating(guildID, m.ID)
 		m.AverageScore = avgRating
-		
+
 		movies = append(movies, m)
 	}
 
@@ -451,6 +480,39 @@ func (d *Database) SearchSelectedMovie(guildID, movieName string) (*MovieResult,
 		return nil, err
 	}
 	return &m, nil
+}
+
+func (d *Database) SaveGuildConfig(guildID, channelID string) error {
+	_, err := d.db.Exec(`
+		INSERT INTO guild_configs (guild_id, suggestion_channel_id, configured_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(guild_id) 
+		DO UPDATE SET suggestion_channel_id = excluded.suggestion_channel_id, 
+		              configured_at = excluded.configured_at`,
+		guildID, channelID, time.Now())
+	return err
+}
+
+func (d *Database) GetGuildConfig(guildID string) (*GuildConfig, error) {
+	var config GuildConfig
+	err := d.db.QueryRow(`
+		SELECT id, guild_id, suggestion_channel_id, configured_at
+		FROM guild_configs
+		WHERE guild_id = ?`, guildID).Scan(
+		&config.ID, &config.GuildID, &config.SuggestionChannelID, &config.ConfiguredAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+func (d *Database) DeleteGuildConfig(guildID string) error {
+	_, err := d.db.Exec("DELETE FROM guild_configs WHERE guild_id = ?", guildID)
+	return err
 }
 
 func (d *Database) Close() error {

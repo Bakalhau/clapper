@@ -10,6 +10,10 @@ func (h *Handlers) HandleInteraction(s *discordgo.Session, i *discordgo.Interact
 	switch i.Type {
 	case discordgo.InteractionApplicationCommand:
 		switch i.ApplicationCommandData().Name {
+		case "setup":
+			h.HandleSetup(s, i)
+		case "config":
+			h.HandleConfig(s, i)
 		case "suggestion":
 			h.HandleSuggestion(s, i)
 		case "mystats":
