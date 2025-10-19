@@ -7,7 +7,19 @@ import (
 )
 
 func (h *Handlers) HandleMyStats(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	count, avgRating, _ := h.db.GetUserStats(i.Member.User.ID)
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	count, avgRating, _ := h.db.GetUserStats(guildID, i.Member.User.ID)
 
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf("📊 %s's Statistics", i.Member.User.Username),

@@ -8,6 +8,18 @@ import (
 )
 
 func (h *Handlers) HandleMovieReviews(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -18,7 +30,7 @@ func (h *Handlers) HandleMovieReviews(s *discordgo.Session, i *discordgo.Interac
 	options := i.ApplicationCommandData().Options
 	movieName := options[0].StringValue()
 
-	movie, err := h.db.SearchSelectedMovie(movieName)
+	movie, err := h.db.SearchSelectedMovie(guildID, movieName)
 	if err != nil || movie == nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString(fmt.Sprintf("❌ Could not find a selected movie matching \"%s\".", movieName)),
@@ -26,7 +38,7 @@ func (h *Handlers) HandleMovieReviews(s *discordgo.Session, i *discordgo.Interac
 		return
 	}
 
-	reviews, err := h.db.GetMovieReviews(movie.ID)
+	reviews, err := h.db.GetMovieReviews(guildID, movie.ID)
 	if err != nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ An error occurred while fetching reviews. Please try again."),
@@ -34,7 +46,7 @@ func (h *Handlers) HandleMovieReviews(s *discordgo.Session, i *discordgo.Interac
 		return
 	}
 
-	avgRating, reviewCount, _ := h.db.GetAverageMovieRating(movie.ID)
+	avgRating, reviewCount, _ := h.db.GetAverageMovieRating(guildID, movie.ID)
 
 	embed := &discordgo.MessageEmbed{
 		Title:       fmt.Sprintf("🎬 Reviews for %s (%s)", movie.MovieName, movie.ReleaseYear),
@@ -120,6 +132,18 @@ func (h *Handlers) HandleMovieReviews(s *discordgo.Session, i *discordgo.Interac
 }
 
 func (h *Handlers) HandleSelectedMovies(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -127,7 +151,7 @@ func (h *Handlers) HandleSelectedMovies(s *discordgo.Session, i *discordgo.Inter
 		},
 	})
 
-	movies, err := h.db.GetAllSelectedMovies()
+	movies, err := h.db.GetAllSelectedMovies(guildID)
 	if err != nil || len(movies) == 0 {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ No movies have been selected yet!"),

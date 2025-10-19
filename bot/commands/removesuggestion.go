@@ -8,6 +8,18 @@ import (
 )
 
 func (h *Handlers) HandleRemoveSuggestion(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -30,9 +42,9 @@ func (h *Handlers) HandleRemoveSuggestion(s *discordgo.Session, i *discordgo.Int
 	var err error
 
 	if isAdmin {
-		movie, err = h.db.SearchAnySuggestion(movieName)
+		movie, err = h.db.SearchAnySuggestion(guildID, movieName)
 	} else {
-		movie, err = h.db.SearchUserSuggestions(movieName, i.Member.User.ID)
+		movie, err = h.db.SearchUserSuggestions(guildID, movieName, i.Member.User.ID)
 	}
 
 	if err != nil || movie == nil {

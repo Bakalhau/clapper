@@ -10,6 +10,18 @@ import (
 )
 
 func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -47,7 +59,7 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 	}
 
 	// Buscar o filme selecionado
-	movie, err := h.db.SearchSelectedMovie(movieName)
+	movie, err := h.db.SearchSelectedMovie(guildID, movieName)
 	if err != nil || movie == nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString(fmt.Sprintf("❌ Could not find a selected movie matching \"%s\".\nYou can only rate movies that have already been selected.", movieName)),
@@ -56,11 +68,12 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 	}
 
 	// Verificar se o usuário já avaliou
-	existingReview, _ := h.db.GetUserReview(movie.ID, i.Member.User.ID)
+	existingReview, _ := h.db.GetUserReview(guildID, movie.ID, i.Member.User.ID)
 
 	// Salvar ou atualizar a avaliação
 	review := &database.MovieReview{
 		SuggestionID: movie.ID,
+		GuildID:      guildID,
 		UserID:       i.Member.User.ID,
 		Username:     i.Member.User.Username,
 		Rating:       rating,
@@ -75,7 +88,7 @@ func (h *Handlers) HandleRateMovie(s *discordgo.Session, i *discordgo.Interactio
 	}
 
 	// Buscar média e contagem de avaliações
-	avgRating, reviewCount, _ := h.db.GetAverageMovieRating(movie.ID)
+	avgRating, reviewCount, _ := h.db.GetAverageMovieRating(guildID, movie.ID)
 
 	// Criar embed de confirmação
 	action := "added"

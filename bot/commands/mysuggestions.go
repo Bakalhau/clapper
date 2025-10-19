@@ -10,6 +10,18 @@ import (
 )
 
 func (h *Handlers) HandleMySuggestions(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
@@ -17,10 +29,10 @@ func (h *Handlers) HandleMySuggestions(s *discordgo.Session, i *discordgo.Intera
 		},
 	})
 
-	suggestions, err := h.db.GetUserSuggestions(i.Member.User.ID)
+	suggestions, err := h.db.GetUserSuggestions(guildID, i.Member.User.ID)
 	if err != nil || len(suggestions) == 0 {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: ptrString("❌ You haven't suggested any movies yet!"),
+			Content: ptrString("❌ You haven't suggested any movies yet in this server!"),
 		})
 		return
 	}
@@ -115,6 +127,11 @@ func (h *Handlers) showSuggestionPage(s *discordgo.Session, i *discordgo.Interac
 }
 
 func (h *Handlers) HandleMySuggestionsPrev(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
@@ -130,7 +147,7 @@ func (h *Handlers) HandleMySuggestionsPrev(s *discordgo.Session, i *discordgo.In
 	userID := matches[1]
 	currentIndex, _ := strconv.Atoi(matches[2])
 
-	suggestions, err := h.db.GetUserSuggestions(userID)
+	suggestions, err := h.db.GetUserSuggestions(guildID, userID)
 	if err != nil || len(suggestions) == 0 {
 		return
 	}
@@ -144,6 +161,11 @@ func (h *Handlers) HandleMySuggestionsPrev(s *discordgo.Session, i *discordgo.In
 }
 
 func (h *Handlers) HandleMySuggestionsNext(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
@@ -159,7 +181,7 @@ func (h *Handlers) HandleMySuggestionsNext(s *discordgo.Session, i *discordgo.In
 	userID := matches[1]
 	currentIndex, _ := strconv.Atoi(matches[2])
 
-	suggestions, err := h.db.GetUserSuggestions(userID)
+	suggestions, err := h.db.GetUserSuggestions(guildID, userID)
 	if err != nil || len(suggestions) == 0 {
 		return
 	}

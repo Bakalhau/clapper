@@ -7,16 +7,26 @@ import (
 )
 
 func (h *Handlers) HandleMovieStats(s *discordgo.Session, i *discordgo.InteractionCreate) {
-	totalSuggestions, _ := h.db.GetAllSuggestionsCount()
-	selectedCount, _ := h.db.GetSelectedMoviesCount()
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
+	totalSuggestions, _ := h.db.GetAllSuggestionsCount(guildID)
+	selectedCount, _ := h.db.GetSelectedMoviesCount(guildID)
 	remaining := totalSuggestions - selectedCount
 
 	serverName := "Server"
-	if i.GuildID != "" {
-		guild, err := s.Guild(i.GuildID)
-		if err == nil {
-			serverName = guild.Name
-		}
+	guild, err := s.Guild(guildID)
+	if err == nil {
+		serverName = guild.Name
 	}
 
 	embed := &discordgo.MessageEmbed{

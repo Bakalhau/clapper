@@ -10,11 +10,23 @@ import (
 )
 
 func (h *Handlers) HandlePickMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: "❌ This command can only be used in a server.",
+				Flags:   discordgo.MessageFlagsEphemeral,
+			},
+		})
+		return
+	}
+
 	s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
 
-	movie, err := h.db.GetRandomMovie()
+	movie, err := h.db.GetRandomMovie(guildID)
 	if err != nil || movie == nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ No available movies to pick! All suggestions have been selected or there are no suggestions yet."),
@@ -23,17 +35,15 @@ func (h *Handlers) HandlePickMovie(s *discordgo.Session, i *discordgo.Interactio
 	}
 
 	serverName := "Server"
-	if i.GuildID != "" {
-		guild, err := s.Guild(i.GuildID)
-		if err == nil {
-			serverName = guild.Name
-		}
+	guild, err := s.Guild(guildID)
+	if err == nil {
+		serverName = guild.Name
 	}
 
 	tmdbMovie, _ := h.tmdb.GetMovieByID(movie.TMDBID)
 
-	totalSuggestions, _ := h.db.GetAllSuggestionsCount()
-	selectedCount, _ := h.db.GetSelectedMoviesCount()
+	totalSuggestions, _ := h.db.GetAllSuggestionsCount(guildID)
+	selectedCount, _ := h.db.GetSelectedMoviesCount(guildID)
 	remaining := totalSuggestions - selectedCount
 
 	embed := &discordgo.MessageEmbed{
@@ -67,7 +77,7 @@ func (h *Handlers) HandlePickMovie(s *discordgo.Session, i *discordgo.Interactio
 				discordgo.Button{
 					Label:    "Reroll",
 					Style:    discordgo.SecondaryButton,
-					CustomID: fmt.Sprintf("reroll_movie_%d", movie.ID),
+					CustomID: fmt.Sprintf("reroll_movie_%s_%d", guildID, movie.ID),
 					Emoji: &discordgo.ComponentEmoji{
 						Name: "🔄",
 					},
@@ -75,7 +85,7 @@ func (h *Handlers) HandlePickMovie(s *discordgo.Session, i *discordgo.Interactio
 				discordgo.Button{
 					Label:    "Confirm Selection",
 					Style:    discordgo.SuccessButton,
-					CustomID: fmt.Sprintf("confirm_movie_%d", movie.ID),
+					CustomID: fmt.Sprintf("confirm_movie_%s_%d", guildID, movie.ID),
 					Emoji: &discordgo.ComponentEmoji{
 						Name: "✅",
 					},
@@ -91,6 +101,11 @@ func (h *Handlers) HandlePickMovie(s *discordgo.Session, i *discordgo.Interactio
 }
 
 func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		return
+	}
+
 	isAdmin := false
 	if i.Member != nil {
 		perms, err := s.UserChannelPermissions(i.Member.User.ID, i.ChannelID)
@@ -114,7 +129,7 @@ func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.Interact
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
 	})
 
-	movie, err := h.db.GetRandomMovie()
+	movie, err := h.db.GetRandomMovie(guildID)
 	if err != nil || movie == nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content:    ptrString("❌ No more available movies to pick!"),
@@ -125,17 +140,15 @@ func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.Interact
 	}
 
 	serverName := "Server"
-	if i.GuildID != "" {
-		guild, err := s.Guild(i.GuildID)
-		if err == nil {
-			serverName = guild.Name
-		}
+	guild, err := s.Guild(guildID)
+	if err == nil {
+		serverName = guild.Name
 	}
 
 	tmdbMovie, _ := h.tmdb.GetMovieByID(movie.TMDBID)
 
-	totalSuggestions, _ := h.db.GetAllSuggestionsCount()
-	selectedCount, _ := h.db.GetSelectedMoviesCount()
+	totalSuggestions, _ := h.db.GetAllSuggestionsCount(guildID)
+	selectedCount, _ := h.db.GetSelectedMoviesCount(guildID)
 	remaining := totalSuggestions - selectedCount
 
 	embed := &discordgo.MessageEmbed{
@@ -169,7 +182,7 @@ func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.Interact
 				discordgo.Button{
 					Label:    "Reroll",
 					Style:    discordgo.SecondaryButton,
-					CustomID: fmt.Sprintf("reroll_movie_%d", movie.ID),
+					CustomID: fmt.Sprintf("reroll_movie_%s_%d", guildID, movie.ID),
 					Emoji: &discordgo.ComponentEmoji{
 						Name: "🔄",
 					},
@@ -177,7 +190,7 @@ func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.Interact
 				discordgo.Button{
 					Label:    "Confirm Selection",
 					Style:    discordgo.SuccessButton,
-					CustomID: fmt.Sprintf("confirm_movie_%d", movie.ID),
+					CustomID: fmt.Sprintf("confirm_movie_%s_%d", guildID, movie.ID),
 					Emoji: &discordgo.ComponentEmoji{
 						Name: "✅",
 					},
@@ -193,6 +206,11 @@ func (h *Handlers) HandleRerollMovie(s *discordgo.Session, i *discordgo.Interact
 }
 
 func (h *Handlers) HandleConfirmMovie(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	guildID := i.GuildID
+	if guildID == "" {
+		return
+	}
+
 	isAdmin := false
 	if i.Member != nil {
 		perms, err := s.UserChannelPermissions(i.Member.User.ID, i.ChannelID)
@@ -217,19 +235,28 @@ func (h *Handlers) HandleConfirmMovie(s *discordgo.Session, i *discordgo.Interac
 	})
 
 	customID := i.MessageComponentData().CustomID
-	re := regexp.MustCompile(`confirm_movie_(\d+)`)
+	re := regexp.MustCompile(`confirm_movie_([^_]+)_(\d+)`)
 	matches := re.FindStringSubmatch(customID)
 
-	if len(matches) < 2 {
+	if len(matches) < 3 {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ An error occurred. Please try again."),
 		})
 		return
 	}
 
-	movieID, _ := strconv.Atoi(matches[1])
+	extractedGuildID := matches[1]
+	movieID, _ := strconv.Atoi(matches[2])
 
-	if err := h.db.MarkMovieSelected(movieID); err != nil {
+	// Verificação de segurança: guild do botão deve corresponder à guild atual
+	if extractedGuildID != guildID {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ This selection is for a different server."),
+		})
+		return
+	}
+
+	if err := h.db.MarkMovieSelected(guildID, movieID); err != nil {
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: ptrString("❌ An error occurred while confirming the movie. Please try again."),
 		})
@@ -245,15 +272,13 @@ func (h *Handlers) HandleConfirmMovie(s *discordgo.Session, i *discordgo.Interac
 	}
 
 	serverName := "Server"
-	if i.GuildID != "" {
-		guild, err := s.Guild(i.GuildID)
-		if err == nil {
-			serverName = guild.Name
-		}
+	guild, err := s.Guild(guildID)
+	if err == nil {
+		serverName = guild.Name
 	}
 
-	totalSuggestions, _ := h.db.GetAllSuggestionsCount()
-	selectedCount, _ := h.db.GetSelectedMoviesCount()
+	totalSuggestions, _ := h.db.GetAllSuggestionsCount(guildID)
+	selectedCount, _ := h.db.GetSelectedMoviesCount(guildID)
 	remaining := totalSuggestions - selectedCount
 
 	tmdbMovie, _ := h.tmdb.GetMovieByID(movie.TMDBID)

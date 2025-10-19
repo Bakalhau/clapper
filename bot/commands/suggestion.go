@@ -20,6 +20,14 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 		},
 	})
 
+	guildID := i.GuildID
+	if guildID == "" {
+		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: ptrString("❌ This command can only be used in a server."),
+		})
+		return
+	}
+
 	options := i.ApplicationCommandData().Options
 	input := options[0].StringValue()
 
@@ -48,10 +56,10 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 		}
 	}
 
-	exists, _ := h.db.MovieAlreadySuggested(movie.ID)
+	exists, _ := h.db.MovieAlreadySuggested(guildID, movie.ID)
 	if exists {
-		suggester, _ := h.db.GetMovieSuggester(movie.ID)
-		msg := fmt.Sprintf("⚠️ **%s** has already been suggested by **%s**!", movie.Title, suggester)
+		suggester, _ := h.db.GetMovieSuggester(guildID, movie.ID)
+		msg := fmt.Sprintf("⚠️ **%s** has already been suggested by **%s** in this server!", movie.Title, suggester)
 		s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
 			Content: &msg,
 		})
@@ -103,6 +111,7 @@ func (h *Handlers) HandleSuggestion(s *discordgo.Session, i *discordgo.Interacti
 	}
 
 	_, err = h.db.SaveSuggestion(&database.Suggestion{
+		GuildID:     guildID,
 		MovieName:   movie.Title,
 		UserID:      i.Member.User.ID,
 		Username:    i.Member.User.Username,
