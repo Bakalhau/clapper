@@ -20,6 +20,8 @@ func (h *Handlers) HandleInteraction(s *discordgo.Session, i *discordgo.Interact
 			h.HandleMyStats(s, i)
 		case "mysuggestions":
 			h.HandleMySuggestions(s, i)
+		case "suggestions":
+			h.HandleSuggestions(s, i)
 		case "pickmovie":
 			h.HandlePickMovie(s, i)
 		case "moviestats":
@@ -43,6 +45,10 @@ func (h *Handlers) HandleInteraction(s *discordgo.Session, i *discordgo.Interact
 			h.HandleMySuggestionsPrev(s, i)
 		} else if strings.HasPrefix(customID, "mysuggestions_next_") {
 			h.HandleMySuggestionsNext(s, i)
+		} else if strings.HasPrefix(customID, "suggestions_prev_") {
+			h.HandleSuggestionsPrev(s, i)
+		} else if strings.HasPrefix(customID, "suggestions_next_") {
+			h.HandleSuggestionsNext(s, i)
 		}
 	}
 }

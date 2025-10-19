@@ -245,6 +245,42 @@ func (d *Database) GetUserSuggestions(guildID, userID string) ([]Suggestion, err
 	return suggestions, nil
 }
 
+func (d *Database) GetAllSuggestions(guildID string) ([]Suggestion, error) {
+	log.Printf("Buscando todas as sugestões para guild_id: %s", guildID)
+
+	rows, err := d.db.Query(`
+		SELECT s.id, s.guild_id, s.movie_name, s.user_id, s.username, s.suggested_at, 
+		       s.tmdb_id, s.rating, s.genres, s.release_year,
+		       CASE WHEN sm.id IS NOT NULL THEN 1 ELSE 0 END as is_selected
+		FROM suggestions s
+		LEFT JOIN selected_movies sm ON s.id = sm.suggestion_id AND s.guild_id = sm.guild_id
+		WHERE s.guild_id = ?
+		ORDER BY s.suggested_at DESC`, guildID)
+
+	if err != nil {
+		log.Printf("Erro na query GetAllSuggestions: %v", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var suggestions []Suggestion
+	for rows.Next() {
+		var s Suggestion
+		var isSelectedInt int
+		err := rows.Scan(&s.ID, &s.GuildID, &s.MovieName, &s.UserID, &s.Username, &s.SuggestedAt,
+			&s.TMDBID, &s.Rating, &s.Genres, &s.ReleaseYear, &isSelectedInt)
+		if err != nil {
+			log.Printf("Erro ao escanear linha: %v", err)
+			return nil, err
+		}
+		s.IsSelected = isSelectedInt == 1
+		suggestions = append(suggestions, s)
+	}
+
+	log.Printf("Total de sugestões encontradas: %d", len(suggestions))
+	return suggestions, nil
+}
+
 func (d *Database) GetRandomMovie(guildID string) (*MovieResult, error) {
 	var m MovieResult
 	err := d.db.QueryRow(`

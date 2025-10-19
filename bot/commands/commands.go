@@ -43,6 +43,10 @@ var Commands = []*discordgo.ApplicationCommand{
 		Description: "View all your movie suggestions",
 	},
 	{
+		Name:        "suggestions",
+		Description: "View all movie suggestions in this server",
+	},
+	{
 		Name:        "pickmovie",
 		Description: "Pick a random movie from the suggestions",
 	},
